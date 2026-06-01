@@ -1,0 +1,491 @@
+"""
+Arduino Vibe IDE MCP Server.
+
+MCP server exposing Arduino hardware control tools.
+Supports USB serial, Bluetooth, compilation, upload, and project management.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Optional
+
+# Add src to path
+_src_dir = Path(__file__).parent
+sys.path.insert(0, str(_src_dir))
+
+from mcp.server.fastmcp import FastMCP
+
+from devices import discover_all_devices, discover_devices_json, check_modules
+from serial_terminal import SerialTerminal, open_terminal, send_serial, read_serial
+from compiler import (
+    compile_sketch, upload_sketch, install_library, list_libraries,
+    search_library, verify_board, board_detect, board_manager_update,
+)
+from project import ArduinoProject
+from sketch_generator import (
+    generate_sketch_from_prompt, build_led_command, LED_PRESET_COLORS,
+    build_led_prompt, build_ir_prompt, build_sensor_prompt,
+    build_servo_prompt, build_generic_prompt, build_bt_bridge_prompt,
+)
+
+# Server instance
+mcp = FastMCP(
+    name="arduino-vibe-ide",
+    instructions="AI-powered Arduino IDE MCP server for vibe coding hardware projects",
+)
+
+# Global serial terminal instance
+_serial_terminal = SerialTerminal()
+_project_manager = ArduinoProject()
+
+
+# ─── Device Discovery ─────────────────────────────────────────────
+
+@mcp.tool()
+def list_devices() -> dict:
+    """
+    Discover all Arduino-compatible devices.
+    Scans USB serial ports (/dev/ttyACM*, /dev/ttyUSB*) and Bluetooth devices.
+
+    Returns:
+        Dict with device list, counts, and metadata for each device.
+    """
+    result = discover_devices_json()
+    return result
+
+
+@mcp.tool()
+def verify_board(port: str = "", fqbn: str = "") -> dict:
+    """
+    Verify a connected Arduino board.
+    Detects board type, firmware, and connection status.
+
+    Args:
+        port: Serial port path (e.g., /dev/ttyACM0). Auto-detect if empty.
+        fqbn: Board FQBN to verify against (e.g., arduino:avr:nano).
+
+    Returns:
+        Board verification status with details.
+    """
+    result = verify_board(port=port, fqbn=fqbn)
+    return result
+
+
+@mcp.tool()
+def check_modules(device_path: str) -> dict:
+    """
+    Detect connected modules (HC-05, sensors, etc.) via serial probing.
+    Sends AT commands and scans for I2C devices.
+
+    Args:
+        device_path: Serial port path to probe.
+
+    Returns:
+        Dict with detected modules and their details.
+    """
+    result = check_modules(device_path)
+    return result
+
+
+# ─── Serial Communication ─────────────────────────────────────────
+
+@mcp.tool()
+def serial_terminal_open(path: str, baudrate: int = 115200) -> dict:
+    """
+    Open a serial terminal connection.
+
+    Args:
+        path: Device path (/dev/ttyACM0, /dev/ttyUSB0, rfcomm:MAC)
+        baudrate: Baud rate (default 115200)
+
+    Returns:
+        Connection status with port info.
+    """
+    global _serial_terminal
+    _serial_terminal = SerialTerminal()
+    return _serial_terminal.open(path, baudrate)
+
+
+@mcp.tool()
+def serial_terminal_read(size: int = 1024) -> dict:
+    """
+    Read data from the open serial terminal.
+
+    Args:
+        size: Maximum bytes to read (default 1024)
+
+    Returns:
+        Received data and buffer status.
+    """
+    return _serial_terminal.read(size)
+
+
+@mcp.tool()
+def serial_terminal_close() -> dict:
+    """
+    Close the serial terminal connection.
+
+    Returns:
+        Disconnection status.
+    """
+    global _serial_terminal
+    result = _serial_terminal.close()
+    _serial_terminal = SerialTerminal()
+    return result
+
+
+@mcp.tool()
+def serial_send(path: str, data: str, baudrate: int = 115200) -> dict:
+    """
+    Send data over serial port (stateless: opens, sends, closes).
+
+    Args:
+        path: Serial port path
+        data: Data string to send
+        baudrate: Baud rate (default 115200)
+
+    Returns:
+        Send status with bytes transmitted.
+    """
+    return send_serial(path, data, baudrate)
+
+
+# ─── LED Control ──────────────────────────────────────────────────
+
+@mcp.tool()
+def set_leds(
+    command: str = "ALL",
+    path: str = "",
+    baudrate: int = 115200,
+    led_index: int = -1,
+    red: int = 255,
+    green: int = 255,
+    blue: int = 255,
+    brightness: int = -1,
+    effect: str = "",
+    speed: int = -1,
+    color_name: str = "",
+) -> dict:
+    """
+    Control LEDs on connected Arduino via serial command.
+    Supports FastLED/SK6812/NeoPixel runtime commands.
+
+    Args:
+        command: Control command (LED, ALL, BRIGHT, EFFECT, SPEED, COLOR)
+        path: Serial port path
+        baudrate: Baud rate (default 115200)
+        led_index: Individual LED index (for LED command, -1 for all)
+        red: Red value (0-255)
+        green: Green value (0-255)
+        blue: Blue value (0-255)
+        brightness: Brightness (0-255)
+        effect: Animation effect (solid, rainbow, pulse, fire, wave, running, random, chase)
+        speed: Animation speed (1-255)
+        color_name: Preset color name (white, red, green, blue, yellow, cyan, magenta, orange, purple, pink, off)
+
+    Returns:
+        Command send status and response.
+    """
+    # Resolve color name
+    if color_name:
+        rgb = LED_PRESET_COLORS.get(color_name.lower(), (255, 255, 255))
+        red, green, blue = rgb
+
+    cmd_string = build_led_command(
+        command=command,
+        led_index=led_index,
+        red=red,
+        green=green,
+        blue=blue,
+        brightness=brightness,
+        effect=effect,
+        speed=speed,
+    )
+
+    if not cmd_string:
+        return {
+            "status": "error",
+            "message": "No command generated. Check parameters.",
+        }
+
+    if path:
+        result = send_serial(path, cmd_string, baudrate)
+    else:
+        # Use persistent terminal
+        result = _serial_terminal.write(cmd_string)
+        # Read response
+        resp = _serial_terminal.read(128)
+
+    return {
+        "status": "sent",
+        "command": cmd_string,
+        "send_result": result,
+    }
+
+
+# ─── Sketch Generation ────────────────────────────────────────────
+
+@mcp.tool()
+def generate_sketch(
+    prompt: str,
+    board: str = "arduino:avr:nano",
+    hardware: str = "",
+    led_pin: int = 6,
+    num_leds: int = 288,
+    led_type: str = "SK6812",
+    ir_pin: int = 2,
+    servo_pin: int = 9,
+    output_path: str = "",
+) -> dict:
+    """
+    Generate an Arduino sketch from a natural language prompt.
+    Supports LEDs, IR remotes, sensors, servos, and generic sketches.
+
+    Args:
+        prompt: Natural language description of the sketch
+        board: Target board FQBN (default arduino:avr:nano)
+        hardware: Additional hardware description
+        led_pin: LED data pin (default 6)
+        num_leds: Number of LEDs (default 288)
+        led_type: LED type (SK6812, WS2812B, NEOPIXEL)
+        ir_pin: IR receiver pin (default 2)
+        servo_pin: Servo control pin (default 9)
+        output_path: File path to save sketch (optional)
+
+    Returns:
+        Generated sketch code and save status.
+    """
+    hardware_context = {
+        "led_pin": led_pin,
+        "num_leds": num_leds,
+        "led_type": led_type,
+        "ir_pin": ir_pin,
+        "servo_pin": servo_pin,
+    }
+
+    sketch = generate_sketch_from_prompt(
+        prompt=prompt,
+        board=board,
+        hardware_context=hardware_context,
+    )
+
+    result = {
+        "status": "generated",
+        "sketch": sketch,
+        "board": board,
+        "size_bytes": len(sketch),
+    }
+
+    # Save to file if path provided
+    if output_path:
+        output_path = os.path.abspath(output_path)
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        with open(output_path, "w") as f:
+            f.write(sketch)
+        result["saved_to"] = output_path
+
+    return result
+
+
+# ─── Compilation & Upload ─────────────────────────────────────────
+
+@mcp.tool()
+def compile_sketch_tool(
+    sketch_path: str,
+    fqbn: str = "",
+    port: str = "",
+) -> dict:
+    """
+    Compile an Arduino sketch using arduino-cli.
+
+    Args:
+        sketch_path: Path to .ino file or sketch directory
+        fqbn: Board FQBN (e.g., arduino:avr:nano). Auto-detect if empty.
+        port: Serial port for auto-detection.
+
+    Returns:
+        Compilation result with success status, output, and size info.
+    """
+    result = compile_sketch(sketch_path, fqbn, port)
+    return result.to_dict()
+
+
+@mcp.tool()
+def upload_sketch_tool(
+    sketch_path: str,
+    fqbn: str = "",
+    port: str = "",
+) -> dict:
+    """
+    Compile and upload an Arduino sketch to the board.
+
+    Args:
+        sketch_path: Path to .ino file or sketch directory
+        fqbn: Board FQBN (e.g., arduino:avr:nano)
+        port: Serial port for upload (e.g., /dev/ttyACM0)
+
+    Returns:
+        Upload result with success status and output.
+    """
+    result = upload_sketch(sketch_path, fqbn, port)
+    return result.to_dict()
+
+
+# ─── Library Management ───────────────────────────────────────────
+
+@mcp.tool()
+def install_library_tool(library_name: str) -> dict:
+    """
+    Install an Arduino library from the library index.
+
+    Args:
+        library_name: Library name (e.g., FastLED, IRremote, DHT-sensor-library)
+
+    Returns:
+        Installation status.
+    """
+    return install_library(library_name)
+
+
+@mcp.tool()
+def list_libraries_tool() -> dict:
+    """
+    List installed Arduino libraries.
+
+    Returns:
+        List of installed libraries with version info.
+    """
+    return list_libraries()
+
+
+@mcp.tool()
+def search_library_tool(query: str) -> dict:
+    """
+    Search Arduino library index.
+
+    Args:
+        query: Search query string
+
+    Returns:
+        List of matching libraries.
+    """
+    return search_library(query)
+
+
+# ─── Project Management ───────────────────────────────────────────
+
+@mcp.tool()
+def create_project(
+    name: str,
+    board: str = "arduino:avr:nano",
+    description: str = "",
+    libraries: list = None,
+    pins: list = None,
+    connection_type: str = "usb",
+    device_path: str = "",
+    bt_mac: str = "",
+    bt_pin: str = "",
+    notes: str = "",
+) -> dict:
+    """
+    Create a new Arduino Vibe IDE project.
+
+    Args:
+        name: Project name
+        board: Target board FQBN (default arduino:avr:nano)
+        description: Project description
+        libraries: List of required libraries
+        pins: List of pin configurations
+        connection_type: Connection type (usb or bluetooth)
+        device_path: Device port path
+        bt_mac: Bluetooth MAC address
+        bt_pin: Bluetooth PIN
+        notes: Project notes
+
+    Returns:
+        Project creation result with paths and metadata.
+    """
+    return _project_manager.create(
+        name=name,
+        board=board,
+        description=description,
+        libraries=libraries or [],
+        pins=pins or [],
+        connection_type=connection_type,
+        device_path=device_path,
+        bt_mac=bt_mac,
+        bt_pin=bt_pin,
+        notes=notes,
+    )
+
+
+@mcp.tool()
+def save_project(
+    name: str,
+    sketch_path: str = "",
+    notes: str = "",
+) -> dict:
+    """
+    Save current project state.
+
+    Args:
+        name: Project name
+        sketch_path: Path to sketch file to save
+        notes: Additional notes to append
+
+    Returns:
+        Save status.
+    """
+    return _project_manager.save(name, sketch_path, notes)
+
+
+@mcp.tool()
+def backup_project(name: str) -> dict:
+    """
+    Create a full backup of a project (sketch + config + notes).
+
+    Args:
+        name: Project name
+
+    Returns:
+        Backup info with tarball path and size.
+    """
+    return _project_manager.backup(name)
+
+
+@mcp.tool()
+def list_projects() -> dict:
+    """
+    List all Arduino Vibe IDE projects.
+
+    Returns:
+        List of projects with metadata.
+    """
+    return _project_manager.list_projects()
+
+
+@mcp.tool()
+def load_project(name: str) -> dict:
+    """
+    Load a project.
+
+    Args:
+        name: Project name
+
+    Returns:
+        Full project data including sketch code, metadata, and backups.
+    """
+    return _project_manager.load(name)
+
+
+# ─── Main ─────────────────────────────────────────────────────────
+
+def run_server():
+    """Run the MCP server."""
+    mcp.run()
+
+
+if __name__ == "__main__":
+    run_server()

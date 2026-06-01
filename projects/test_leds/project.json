@@ -1,0 +1,17 @@
+{
+  "name": "test-leds",
+  "description": "Test LED project",
+  "board": "nano",
+  "board_fqbn": "nano",
+  "connection_type": "usb",
+  "device_path": "",
+  "bt_mac": "",
+  "bt_pin": "",
+  "bt_rfcord_channel": 1,
+  "libraries": [],
+  "pins": [],
+  "notes": "",
+  "created_at": "2026-06-01T03:43:30.174583",
+  "updated_at": "2026-06-01T03:43:30.174583",
+  "sketch_path": "/home/john/projects/arduino-vibe-ide/projects/test_leds/sketch/test_leds.ino"
+}
