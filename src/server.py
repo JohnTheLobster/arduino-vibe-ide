@@ -14,6 +14,8 @@ from typing import Optional
 # Add src to path
 _src_dir = Path(__file__).parent
 sys.path.insert(0, str(_src_dir))
+# Add project root to path for templates import
+sys.path.insert(0, str(_src_dir.parent))
 
 from mcp.server.fastmcp import FastMCP
 
@@ -29,6 +31,12 @@ from sketch_generator import (
     build_led_prompt, build_ir_prompt, build_sensor_prompt,
     build_servo_prompt, build_generic_prompt, build_bt_bridge_prompt,
 )
+from agent_bridge import AgentBridge, register_agent_tools
+from agent_sketch_builder import (
+    register_sketch_builder_tools, build_sketch_from_prompt,
+    infer_hardware, HardwareSpec,
+)
+import templates
 
 # Server instance
 mcp = FastMCP(
@@ -36,9 +44,13 @@ mcp = FastMCP(
     instructions="AI-powered Arduino IDE MCP server for vibe coding hardware projects",
 )
 
-# Global serial terminal instance
+# Global instances
 _serial_terminal = SerialTerminal()
 _project_manager = ArduinoProject()
+_agent_bridge = AgentBridge()
+
+# Register sketch builder tools (agent_build_sketch, agent_compile_sketch, agent_flash_sketch, agent_build_and_flash)
+register_sketch_builder_tools(mcp)
 
 
 # ─── Device Discovery ─────────────────────────────────────────────
@@ -225,7 +237,101 @@ def set_leds(
     }
 
 
+# ─── Agent Bridge (Live Hardware Feedback Loop) ────────────────────
+
+# Register agent tools for AI agent ↔ Arduino feedback loop
+register_agent_tools(mcp, _agent_bridge)
+
+
 # ─── Sketch Generation ────────────────────────────────────────────
+
+@mcp.tool()
+def list_templates_tool(category: str = None) -> dict:
+    """
+    List available AgentCore-enabled sketch templates.
+
+    Args:
+        category: Filter by category (environment, agriculture, security, automation, lighting, connectivity)
+
+    Returns:
+        List of templates with name, category, and description.
+    """
+    template_list = templates.list_templates(category)
+    return {
+        "count": len(template_list),
+        "templates": [
+            {
+                "name": t.name,
+                "category": t.category,
+                "description": t.description,
+                "sensors": t.sensors,
+                "actuators": t.actuators,
+                "displays": t.displays,
+                "libraries": t.libraries,
+            }
+            for t in template_list
+        ]
+    }
+
+
+@mcp.tool()
+def get_template_tool(name: str) -> dict:
+    """
+    Get a specific AgentCore sketch template by name.
+
+    Args:
+        name: Template name (e.g., 'Weather Station', 'Smart Plant Monitor')
+
+    Returns:
+        Template with full sketch code, wiring diagram, and metadata.
+    """
+    template = templates.get_template(name)
+    if not template:
+        return {
+            "status": "error",
+            "message": f"Template '{name}' not found",
+            "available": [t.name for t in templates.list_templates()],
+        }
+
+    return {
+        "status": "success",
+        "name": template.name,
+        "category": template.category,
+        "description": template.description,
+        "wiring": template.wiring,
+        "sensors": template.sensors,
+        "actuators": template.actuators,
+        "displays": template.displays,
+        "libraries": template.libraries,
+        "sketch_size": len(template.sketch),
+        "sketch": template.sketch,
+    }
+
+
+@mcp.tool()
+def search_templates_tool(query: str) -> dict:
+    """
+    Search AgentCore sketch templates by keyword.
+
+    Args:
+        query: Search term (e.g., 'weather', 'security', 'plant', 'iot')
+
+    Returns:
+        Matching templates with descriptions.
+    """
+    results = templates.search_templates(query)
+    return {
+        "query": query,
+        "count": len(results),
+        "templates": [
+            {
+                "name": t.name,
+                "category": t.category,
+                "description": t.description,
+            }
+            for t in results
+        ]
+    }
 
 @mcp.tool()
 def generate_sketch(

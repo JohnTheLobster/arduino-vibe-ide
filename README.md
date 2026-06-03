@@ -2,66 +2,106 @@
 
 AI-powered Arduino IDE MCP server and CLI wizard for hardware vibe coding.
 
+**Version 0.2** — IDE Plugin Integration with 37 MCP Tools
+
 ## Features
 
-- **MCP Server** — 15+ tools for Arduino hardware control
+- **MCP Server** — 37 tools for Arduino hardware control, sketch generation, and IDE integration
 - **CLI Wizard** — Interactive setup with rich UI (click + rich)
+- **IDE Plugin** — Install as MCP plugin for Claude Code, Cursor, and Codex
+- **AgentCore Vibe Coding** — Natural language → sketch → compile → flash in one prompt
+- **Template Library** — 6 pre-built AgentCore templates (weather, IoT, security, etc.)
 - **Device Discovery** — USB serial + Bluetooth HC-05 scanning
-- **Sketch Generation** — Template-based Arduino C++ code generation
+- **Sketch Generation** — AI generates Arduino C++ code from natural language prompts
 - **Project Management** — Create, save, backup, load projects
 - **Serial Terminal** — Interactive serial communication
 - **LED Control** — Runtime LED effects via serial commands (FastLED/SK6812)
-- **IR Remote** — IR receive/send with code storage
-- **Sensor Support** — DHT, BMP, BME, I2C device detection
+- **Agent Bridge** — Live hardware feedback loop for iterative development
+- **Hardware Inference** — Keyword-based hardware detection and wiring suggestions
 
 ## Quick Start
 
+### CLI Mode
+
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install package
+pip install -e .
 
 # Run setup wizard
-python src/cli.py init
+arduino-vibe init
 
 # Discover devices
-python src/cli.py discover
+arduino-vibe discover
 
 # Generate a sketch
-python src/cli.py sketch "LED controller with FastLED and SK6812"
+arduino-vibe sketch "LED controller with FastLED and SK6812"
 
 # Compile and upload
-python src/cli.py compile sketch.ino
-python src/cli.py upload sketch.ino
+arduino-vibe compile sketch.ino
+arduino-vibe upload sketch.ino
 
 # Open serial terminal
-python src/cli.py terminal --device /dev/ttyACM0
-
-# MCP server
-python src/server.py
+arduino-vibe terminal --device /dev/ttyACM0
 ```
 
-## MCP Tools
+### IDE Plugin Mode
 
-| Tool | Description |
-|------|-------------|
-| `list_devices` | Discover USB serial + Bluetooth devices |
-| `serial_terminal_open` | Open serial port |
-| `serial_terminal_read` | Read from serial |
-| `serial_terminal_close` | Close serial port |
-| `serial_send` | Send data over serial |
-| `generate_sketch` | AI generates Arduino C++ from prompt |
-| `compile_sketch_tool` | Compile via arduino-cli |
-| `upload_sketch_tool` | Flash to board |
-| `install_library_tool` | Install Arduino library |
-| `list_libraries_tool` | List installed libraries |
-| `create_project` | Create new project |
-| `save_project` | Save project state |
-| `backup_project` | Full backup (tarball) |
-| `list_projects` | List saved projects |
-| `load_project` | Load a project |
-| `set_leds` | Runtime LED control |
-| `verify_board` | Verify connected board |
-| `check_modules` | Detect connected modules |
+```bash
+# Install MCP server as IDE plugin
+pip install -e .
+
+# Run MCP server (stdio transport)
+arduino-vibe-mcp
+
+# Or use pre-built configs for Claude Code, Cursor, or Codex
+# See ide-integration/ for installation instructions
+```
+
+**Example Claude Code Prompt:**
+```
+Create an Arduino sketch for a weather station with DHT22 temperature/humidity sensor and OLED display.
+Use AgentCore architecture with sensor reading every 5 minutes.
+Compile and flash to Arduino Nano.
+```
+
+## MCP Tools (37 Total)
+
+### Hardware
+- `list_devices` — Discover USB serial + Bluetooth devices
+- `serial_terminal_open/close/read/write` — Serial communication
+- `serial_send` — Send data over serial
+- `verify_board` — Verify connected board
+- `check_modules` — Detect connected modules
+
+### Sketch Generation
+- `generate_sketch` — AI generates Arduino C++ from prompt
+- `agent_sketch_builder` — NL prompt → AgentCore-enabled sketch
+- `compile_sketch_tool` — Compile via arduino-cli
+- `upload_sketch_tool` — Flash to board
+
+### AgentCore Vibe Coding
+- `vibe_code` — One-shot NL prompt → sketch → compile → flash
+- `vibe_code_iterative` — Interactive sketch refinement
+- `vibe_code_template` — Template-based sketch generation
+- `read_sensor_data` — Live sensor reading
+- `set_leds` — Runtime LED control
+- `set_servo` — Servo position control
+
+### Templates
+- `list_templates` — Browse 6 pre-built templates
+- `search_templates` — Find templates by keyword
+- `create_template_project` — Generate project from template
+
+### Libraries
+- `install_library_tool` — Install Arduino library
+- `list_libraries_tool` — List installed libraries
+
+### Projects
+- `create_project` — Create new project
+- `save_project` — Save project state
+- `backup_project` — Full backup (tarball)
+- `list_projects` — List saved projects
+- `load_project` — Load a project
 
 ## Hardware
 
@@ -86,19 +126,24 @@ The generated sketches support runtime LED control via serial:
 
 ```
 arduino-vibe-ide/
-├── config.yaml          # Default configuration
-├── pyproject.toml       # Package metadata
-├── requirements.txt     # Dependencies
+├── CHANGELOG.md       # Version history
+├── config.yaml        # Default configuration
+├── pyproject.toml     # Package metadata
+├── requirements.txt   # Dependencies
+├── ide-integration/   # IDE plugin configs (Claude, Cursor, Codex)
+├── templates/         # Pre-built AgentCore templates
 ├── src/
-│   ├── __init__.py      # Package init
-│   ├── server.py        # MCP server (15+ tools)
-│   ├── cli.py           # CLI wizard (click + rich)
-│   ├── devices.py       # Device discovery
+│   ├── __init__.py    # Package init
+│   ├── server.py      # MCP server (37 tools)
+│   ├── cli.py         # CLI wizard (click + rich)
+│   ├── agent_bridge.py        # AgentCore hardware bridge
+│   ├── agent_sketch_builder.py # NL → sketch generation
+│   ├── devices.py     # Device discovery
 │   ├── serial_terminal.py  # Serial communication
-│   ├── compiler.py      # arduino-cli wrapper
-│   ├── project.py       # Project management
+│   ├── compiler.py    # arduino-cli wrapper
+│   ├── project.py     # Project management
 │   └── sketch_generator.py  # AI sketch templates
-└── projects/            # User projects (auto-created)
+└── projects/          # User projects (auto-created)
 ```
 
 ## Dependencies

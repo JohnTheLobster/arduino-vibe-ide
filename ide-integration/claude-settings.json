@@ -1,0 +1,16 @@
+// Claude Code MCP Server Configuration
+// Add this to your ~/.claude/settings.json or create ~/.claude/mcp.json
+
+{
+  "mcpServers": {
+    "arduino-vibe-ide": {
+      "command": "arduino-vibe-mcp",
+      "args": [],
+      "env": {
+        "PYTHONPATH": "/home/john/projects/arduino-vibe-ide"
+      },
+      "name": "arduino-vibe-ide",
+      "instructions": "AI-powered Arduino IDE MCP server for vibe coding hardware projects"
+    }
+  }
+}
