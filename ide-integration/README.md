@@ -4,11 +4,38 @@ This directory contains MCP configuration files for integrating Arduino Vibe IDE
 
 ## Supported IDEs
 
-| IDE | Config File | Description |
-|-----|-------------|-------------|
-| Claude Code | `mcp-claude.json` | Add to `~/.claude/mcp.json` or `~/.claude/settings.json` |
-| Cursor | `mcp-cursor.json` | Add to `~/.cursor/mcp.json` or Cursor MCP settings |
-| Codex | `mcp-codex.json` | Add to `~/.codex/mcp.json` or Codex MCP settings |
+| IDE | Config File | Transport |
+|---|---|---|
+| **Cursor** | `mcp-cursor.json` | stdio, HTTP, SSE |
+| **Windsurf** | `mcp-windsurf.json` | stdio, HTTP, SSE |
+| **Claude Code** | `mcp-claude.json` | stdio, HTTP |
+| **Claude Desktop** | `mcp-claude.json` | stdio, HTTP |
+| **Codex CLI** | `mcp-codex.json` | stdio, HTTP |
+| **Cline** | `mcp-cursor.json` | stdio, HTTP |
+| **VS Code + Copilot** | `mcp-cursor.json` | stdio, HTTP |
+| **Zed** | `mcp-cursor.json` | stdio, HTTP |
+| **Continue** | `mcp-cursor.json` | stdio, HTTP |
+| **Goose** | `mcp-cursor.json` | stdio, HTTP |
+
+## Universal Config
+
+All tools that support **stdio transport** (which is all of them) use the same config:
+
+```json
+{
+  "mcpServers": {
+    "arduino-vibe-ide": {
+      "command": "arduino-vibe-mcp",
+      "args": [],
+      "env": {
+        "PYTHONPATH": "/home/john/projects/arduino-vibe-ide"
+      }
+    }
+  }
+}
+```
+
+Just paste this into whichever config file your tool uses.
 
 ## Installation
 
@@ -19,19 +46,9 @@ This directory contains MCP configuration files for integrating Arduino Vibe IDE
    pip install -e /home/john/projects/arduino-vibe-ide
    ```
 
-2. Copy the appropriate config file to your IDE's MCP configuration location:
-   ```bash
-   # For Claude Code
-   cp ide-integration/mcp-claude.json ~/.claude/mcp.json
-   
-   # For Cursor
-   cp ide-integration/mcp-cursor.json ~/.cursor/mcp.json
-   
-   # For Codex
-   cp ide-integration/mcp-codex.json ~/.codex/mcp.json
-   ```
+2. Copy the config to your tool's MCP config location (see table above).
 
-3. Restart your IDE to load the MCP server.
+3. Restart your tool. The 53 MCP tools should be available.
 
 ### Manual Configuration
 

@@ -141,11 +141,13 @@ The server uses **stdio transport** (standard input/output), which is the simple
 
 ---
 
-## Step 6: Connect Claude Code
+## Step 6: Connect Your AI Coding Tool
 
-### Option A: Claude Code CLI (Recommended)
+The MCP server uses **stdio transport** (stdin/stdout). This is the most universal method — supported by every major AI coding tool.
 
-Create or edit `~/.claude/settings.json`:
+### Cursor
+
+Open **Cursor Settings → MCP Servers** (or edit `~/.cursor/mcp.json`):
 
 ```json
 {
@@ -158,22 +160,108 @@ Create or edit `~/.claude/settings.json`:
 }
 ```
 
-Then run Claude Code:
-```bash
-claude
+Restart Cursor. You'll see "arduino-vibe-ide" in your MCP tools list.
+
+### Windsurf (Codeium)
+
+Open **Windsurf Settings → MCP** (or edit `~/.codeium/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "arduino-vibe-ide": {
+      "command": "arduino-vibe-mcp",
+      "args": []
+    }
+  }
+}
 ```
 
-### Option B: Cursor IDE
+### Claude Code
 
-Open **Cursor Settings → MCP Servers** and add:
+Edit `~/.claude/settings.json`:
 
-- **Name:** Arduino Vibe IDE
+```json
+{
+  "mcpServers": {
+    "arduino-vibe-ide": {
+      "command": "arduino-vibe-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Edit `~/.claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "arduino-vibe-ide": {
+      "command": "arduino-vibe-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### VS Code + GitHub Copilot
+
+Create `.github/copilot.mcp.json` in your project (or add to your user MCP config):
+
+```json
+{
+  "mcpServers": {
+    "arduino-vibe-ide": {
+      "command": "arduino-vibe-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### Codex CLI
+
+Edit `~/.codex/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "arduino-vibe-ide": {
+      "command": "arduino-vibe-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### Cline (VS Code Extension)
+
+Open **Cline → MCP Servers** and add:
+
 - **Command:** `arduino-vibe-mcp`
 - **Args:** (leave empty)
 
-### Option C: Codex CLI
+### Zed Editor
 
-Add to your Codex MCP config:
+Add to `~/.config/zed/settings.json`:
+
+```json
+{
+  "mcp_servers": {
+    "arduino-vibe-ide": {
+      "command": "arduino-vibe-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### Continue (VS Code / JetBrains Extension)
+
+Add to `.continue/config.json`:
 
 ```json
 {
@@ -185,6 +273,35 @@ Add to your Codex MCP config:
   }
 }
 ```
+
+### ChatGPT (Plus/Pro)
+
+ChatGPT uses **remote HTTP transport**, so you need the server running with an HTTP endpoint. Start with:
+
+```bash
+arduino-vibe-mcp --transport http --port 8601
+```
+
+Then in ChatGPT: **Settings → Connectors → Add Custom** → point to `http://localhost:8601/mcp`
+
+---
+
+## All Compatible Tools
+
+| Tool | Transport | How Popular |
+|---|---|---|
+| **Cursor** | stdio, HTTP, SSE | ⭐ Most popular AI IDE |
+| **Claude Code** | stdio, HTTP | ⭐ Anthropic's CLI |
+| **Windsurf** | stdio, HTTP, SSE | ⭐ Growing fast (VS Code fork) |
+| **VS Code + Copilot** | stdio, HTTP | ⭐ Built into VS Code |
+| **Cline** | stdio, HTTP | Popular VS Code extension |
+| **Zed** | stdio, HTTP | Fast editor, gaining traction |
+| **Continue** | stdio, HTTP | Open-source, VS Code / JetBrains |
+| **Goose** | stdio, HTTP | Block's AI coding tool |
+| **Codex** | stdio, HTTP | OpenAI's CLI |
+| **ChatGPT** | HTTP only | Remote only, needs HTTP transport |
+
+**All tools that support stdio** just need the config above — one command, no ports, no networking.
 
 ---
 

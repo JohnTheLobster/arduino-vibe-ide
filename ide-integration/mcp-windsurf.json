@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "arduino-vibe-ide": {
+      "command": "arduino-vibe-mcp",
+      "args": [],
+      "env": {
+        "PYTHONPATH": "/home/john/projects/arduino-vibe-ide"
+      }
+    }
+  }
+}
