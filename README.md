@@ -2,11 +2,13 @@
 
 AI-powered Arduino IDE MCP server and CLI wizard for hardware vibe coding.
 
-**Version 0.2** — IDE Plugin Integration with 37 MCP Tools
+**Version 0.2.1** — Multi-Board Support & Serial Plotter
+
+[📖 Step-by-Step Setup Guide](SETUP.md) — *For beginners, no MCP knowledge needed*
 
 ## Features
 
-- **MCP Server** — 37 tools for Arduino hardware control, sketch generation, and IDE integration
+- **MCP Server** — 53 tools for Arduino hardware control, sketch generation, and IDE integration
 - **CLI Wizard** — Interactive setup with rich UI (click + rich)
 - **IDE Plugin** — Install as MCP plugin for Claude Code, Cursor, and Codex
 - **AgentCore Vibe Coding** — Natural language → sketch → compile → flash in one prompt
@@ -64,20 +66,39 @@ Use AgentCore architecture with sensor reading every 5 minutes.
 Compile and flash to Arduino Nano.
 ```
 
-## MCP Tools (37 Total)
+## MCP Tools (53 Total)
 
 ### Hardware
 - `list_devices` — Discover USB serial + Bluetooth devices
 - `serial_terminal_open/close/read/write` — Serial communication
 - `serial_send` — Send data over serial
+- `serial_check_connection` — Verify serial link is alive
+- `serial_reconnect` — Auto-reconnect to last known port
 - `verify_board` — Verify connected board
 - `check_modules` — Detect connected modules
+
+### Serial Plotter
+- `serial_plotter_open` — Start plotter on a serial port
+- `serial_plotter_read` — Read and parse sensor data
+- `serial_plotter_summary` — Get statistics (min/max/avg)
+- `serial_plotter_close` — Close plotter session
+
+### Configuration Profiles
+- `profile_list` — List saved hardware profiles
+- `profile_get` — Get profile details
+- `profile_create` — Create a new profile
+- `profile_update` — Update an existing profile
+- `profile_delete` — Delete a profile
+- `profile_set_active` — Set active profile
+- `profile_get_active` — Get the active profile
 
 ### Sketch Generation
 - `generate_sketch` — AI generates Arduino C++ from prompt
 - `agent_sketch_builder` — NL prompt → AgentCore-enabled sketch
 - `compile_sketch_tool` — Compile via arduino-cli
 - `upload_sketch_tool` — Flash to board
+- `upload_spiffs_tool` — Upload SPIFFS filesystem (ESP32/ESP8266)
+- `upload_littlefs_tool` — Upload LittleFS filesystem (ESP32)
 
 ### AgentCore Vibe Coding
 - `vibe_code` — One-shot NL prompt → sketch → compile → flash
@@ -92,9 +113,16 @@ Compile and flash to Arduino Nano.
 - `search_templates` — Find templates by keyword
 - `create_template_project` — Generate project from template
 
+### Board Management
+- `install_board_core` — Install board support (ESP32, ESP8266, RP2040)
+- `board_manager_update` — Update board manager index
+- `board_detect` — Detect connected board type
+- `board_list` — List installed board cores
+
 ### Libraries
 - `install_library_tool` — Install Arduino library
 - `list_libraries_tool` — List installed libraries
+- `search_library` — Search for libraries
 
 ### Projects
 - `create_project` — Create new project
@@ -104,6 +132,15 @@ Compile and flash to Arduino Nano.
 - `load_project` — Load a project
 
 ## Hardware
+
+Supported boards:
+
+| Family | Boards |
+|---|---|
+| **Arduino AVR** | Uno, Nano, Mega, Leonardo, Micro |
+| **ESP32** | ESP32, ESP32 Dev, ESP32-S3 |
+| **ESP8266** | ESP8266, NodeMCU |
+| **RP2040** | Raspberry Pi Pico, Pico W |
 
 Default configuration:
 - **Board:** Arduino Nano (clone)
@@ -127,22 +164,25 @@ The generated sketches support runtime LED control via serial:
 ```
 arduino-vibe-ide/
 ├── CHANGELOG.md       # Version history
+├── SETUP.md           # Step-by-step setup guide (for beginners)
 ├── config.yaml        # Default configuration
 ├── pyproject.toml     # Package metadata
-├── requirements.txt   # Dependencies
-├── ide-integration/   # IDE plugin configs (Claude, Cursor, Codex)
+├── examples/          # Example sketches (blink, sensor, WiFi, MQTT, PWM)
 ├── templates/         # Pre-built AgentCore templates
 ├── src/
 │   ├── __init__.py    # Package init
-│   ├── server.py      # MCP server (37 tools)
+│   ├── server.py      # MCP server (53 tools)
 │   ├── cli.py         # CLI wizard (click + rich)
-│   ├── agent_bridge.py        # AgentCore hardware bridge
-│   ├── agent_sketch_builder.py # NL → sketch generation
-│   ├── devices.py     # Device discovery
-│   ├── serial_terminal.py  # Serial communication
-│   ├── compiler.py    # arduino-cli wrapper
-│   ├── project.py     # Project management
-│   └── sketch_generator.py  # AI sketch templates
+│   ├── agent_bridge.py             # AgentCore hardware bridge
+│   ├── agent_sketch_builder.py     # NL → sketch generation
+│   ├── config_profiles.py          # Hardware profile CRUD
+│   ├── devices.py                  # Device discovery
+│   ├── serial_plotter.py           # Serial plotter with stats
+│   ├── serial_terminal.py          # Serial communication
+│   ├── compiler.py                 # arduino-cli wrapper (multi-board)
+│   ├── project.py                  # Project management
+│   └── sketch_generator.py         # AI sketch templates
+├── tests/             # Test suite (35 tests)
 └── projects/          # User projects (auto-created)
 ```
 
