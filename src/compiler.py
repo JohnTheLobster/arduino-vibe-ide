@@ -52,6 +52,32 @@ BOARD_CONFIGS = {
         "fqbn": "arduino:avr:promicro",
         "cpu": "ATmega32U4",
     },
+    # ESP32
+    "esp32": {
+        "fqbn": "esp32:esp32:esp32",
+        "cpu": "ESP32",
+        "variants": {"default": "esp32:esp32:esp32", "devkit": "esp32:esp32:esp32dev", "wrover": "esp32:esp32:esp32wrover", "s3": "esp32:esp32:esp32s3"},
+        "board_manager_url": "https://espressif.github.io/arduino-esp32/package_esp32_index.json",
+        "upload_speed": 115200,
+        "monitor_speed": 115200,
+    },
+    "esp32dev": {"fqbn": "esp32:esp32:esp32dev", "cpu": "ESP32 Dev Module", "board_manager_url": "https://espressif.github.io/arduino-esp32/package_esp32_index.json"},
+    "esp32s3": {"fqbn": "esp32:esp32:esp32s3", "cpu": "ESP32-S3", "board_manager_url": "https://espressif.github.io/arduino-esp32/package_esp32_index.json"},
+    # ESP8266
+    "esp8266": {
+        "fqbn": "esp8266:esp8266:generic", "cpu": "ESP8266",
+        "variants": {"nodemcu": "esp8266:esp8266:nodemcu", "wemos_d1": "esp8266:esp8266:d1", "generic": "esp8266:esp8266:generic"},
+        "board_manager_url": "http://arduino.esp8266.com/stable/package_esp8266com_index.json",
+    },
+    "nodemcu": {"fqbn": "esp8266:esp8266:nodemcu", "cpu": "NodeMCU ESP8266", "board_manager_url": "http://arduino.esp8266.com/stable/package_esp8266com_index.json"},
+    # RP2040
+    "rp2040": {
+        "fqbn": "rp2040:rp2040:rpipico", "cpu": "Raspberry Pi Pico (RP2040)",
+        "variants": {"pico": "rp2040:rp2040:rpipico", "pico_w": "rp2040:rp2040:rpipicow"},
+        "board_manager_url": "https://github.com/earlephilhower/arduino-pico/releases/download/main/package_rp2040_index.json",
+    },
+    "rpipico": {"fqbn": "rp2040:rp2040:rpipico", "cpu": "Raspberry Pi Pico", "board_manager_url": "https://github.com/earlephilhower/arduino-pico/releases/download/main/package_rp2040_index.json"},
+    "rpipicow": {"fqbn": "rp2040:rp2040:rpipicow", "cpu": "Raspberry Pi Pico W", "board_manager_url": "https://github.com/earlephilhower/arduino-pico/releases/download/main/package_rp2040_index.json"},
 }
 
 
@@ -184,7 +210,7 @@ def board_detect(port: str = "") -> dict:
         # If no specific port, return first detected Arduino
         for item in data:
             fqbn = item.get("Fqbn", "")
-            if fqbn.startswith("arduino:"):
+            if fqbn.startswith("arduino:") or fqbn.startswith("esp32:") or fqbn.startswith("esp8266:") or fqbn.startswith("rp2040:"):
                 p = item.get("Port")
                 port_addr = p.get("Address", p) if isinstance(p, dict) else (p or "")
                 return {
@@ -267,7 +293,9 @@ def compile_sketch(
             fqbn = "arduino:avr:nano"  # Default fallback
 
     # Ensure core is installed
-    _install_core("arduino:avr")
+    platform_prefix = ":".join(fqbn.split(":")[:2])
+    board_name = next((name for name, cfg in BOARD_CONFIGS.items() if cfg.get("fqbn") == fqbn), "")
+    _install_core(platform_prefix, board_name=board_name)
 
     # Build command
     args = ["compile", "--fqbn", fqbn]
@@ -384,6 +412,37 @@ def upload_sketch(
     )
 
 
+def upload_spiffs(port: str, fqbn: str, data_dir: str) -> UploadResult:
+    """Upload SPIFFS filesystem image to ESP32/ESP8266."""
+    data_dir = os.path.abspath(data_dir)
+    if not os.path.isdir(data_dir):
+        return UploadResult(success=False, message=f"Data directory not found: {data_dir}", error="Directory does not exist")
+    if fqbn.startswith("esp32:") or fqbn.startswith("esp8266:"):
+        args = ["uploadfs", "--fqbn", fqbn]
+    else:
+        return UploadResult(success=False, message=f"SPIFFS not commonly used for {fqbn}")
+    if port:
+        args.extend(["--port", port])
+    args.append(data_dir)
+    stdout, stderr, code = _run_arduino_cli(args, timeout=180)
+    return UploadResult(success=code==0, output=stdout+stderr, message="SPIFFS upload completed" if code==0 else f"Exit code: {code}", error=stderr if not code==0 else "")
+
+
+def upload_littlefs(port: str, fqbn: str, data_dir: str) -> dict:
+    """Upload LittleFS filesystem image (primarily for ESP32)."""
+    data_dir = os.path.abspath(data_dir)
+    if not os.path.isdir(data_dir):
+        return {"success": False, "message": f"Data directory not found: {data_dir}"}
+    if not fqbn.startswith("esp32:"):
+        return {"success": False, "message": f"LittleFS primarily for ESP32, got: {fqbn}"}
+    args = ["uploadfs", "--fqbn", fqbn, "--build-property", "build.fs=LittleFS"]
+    if port:
+        args.extend(["--port", port])
+    args.append(data_dir)
+    stdout, stderr, code = _run_arduino_cli(args, timeout=180)
+    return {"success": code==0, "output": stdout+stderr, "message": "LittleFS upload completed" if code==0 else f"Exit code: {code}"}
+
+
 def install_library(library_name: str) -> dict:
     """
     Install an Arduino library from the library index.
@@ -431,18 +490,37 @@ def list_libraries() -> dict:
         return {"libraries": [], "raw_output": stdout}
 
 
-def _install_core(fqbn_prefix: str = "arduino:avr") -> bool:
+def _install_core(fqbn_prefix: str = "arduino:avr", board_name: str = "") -> bool:
     """Install Arduino core if not present."""
-    stdout, stderr, code = _run_arduino_cli(
-        ["core", "update-index"], timeout=60
-    )
-    if code != 0:
-        return False
-
-    stdout, stderr, code = _run_arduino_cli(
-        ["core", "install", fqbn_prefix], timeout=120
-    )
+    config = BOARD_CONFIGS.get(board_name, {}) if board_name else {}
+    board_url = config.get("board_manager_url", "")
+    update_args = ["core", "update-index"]
+    if board_url:
+        update_args.extend(["--additional-urls", board_url])
+    _run_arduino_cli(update_args, timeout=60)  # Don't fail if index already current
+    install_args = ["core", "install", fqbn_prefix]
+    if board_url:
+        install_args.extend(["--additional-urls", board_url])
+    stdout, stderr, code = _run_arduino_cli(install_args, timeout=120)
     return code == 0
+
+
+def install_board_core(board_name: str) -> dict:
+    """Install the board core for ESP32, ESP8266, RP2040, or AVR boards."""
+    config = BOARD_CONFIGS.get(board_name, {})
+    fqbn = config.get("fqbn", "")
+    board_url = config.get("board_manager_url", "")
+    if not fqbn:
+        return {"success": False, "message": f"Unknown board: {board_name}"}
+    prefix = ":".join(fqbn.split(":")[:2])
+    if board_url:
+        _run_arduino_cli(["core", "update-index", "--additional-urls", board_url], timeout=120)
+    args = ["core", "install", prefix]
+    if board_url:
+        args.extend(["--additional-urls", board_url])
+    stdout, stderr, code = _run_arduino_cli(args, timeout=180)
+    return {"success": code == 0, "board": board_name, "fqbn": fqbn, "output": stdout + stderr,
+            "message": f"Core {prefix} installed" if code == 0 else f"Error: {stderr}"}
 
 
 def board_manager_update() -> dict:

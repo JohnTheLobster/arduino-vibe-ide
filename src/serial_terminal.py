@@ -49,6 +49,9 @@ class SerialTerminal:
         self._lock = threading.Lock()
         self._read_thread: Optional[threading.Thread] = None
         self._running: bool = False
+        self.max_retries: int = 3
+        self.retry_delay: float = 1.0
+        self.auto_reconnect: bool = False
 
     @classmethod
     def get_instance(cls) -> "SerialTerminal":
@@ -269,6 +272,39 @@ class SerialTerminal:
             "buffer_size": len(self.read_buffer),
             "port_info": self.port.name if self.port else None,
         }
+
+    def retry_write(self, data: str, retries: int = None) -> dict:
+        """Write with automatic retry on disconnect."""
+        retries = retries or self.max_retries
+        for attempt in range(retries):
+            result = self.write(data)
+            if result["status"] == "sent":
+                return result
+            if self.auto_reconnect and result["status"] == "error" and self.path:
+                self.open(self.path, self.baudrate)
+            time.sleep(self.retry_delay * (attempt + 1))
+        return result
+
+    def check_connection(self) -> dict:
+        """Check if the serial connection is still alive."""
+        with self._lock:
+            if not self.port or not self.port.is_open:
+                return {"connected": False, "path": self.path}
+            try:
+                self.port.read(1)
+                return {"connected": True, "path": self.path}
+            except serial.SerialException as e:
+                self.connected = False
+                return {"connected": False, "path": self.path, "error": str(e)}
+
+    def reconnect(self) -> dict:
+        """Attempt to reconnect to the last known port."""
+        with self._lock:
+            if not self.path:
+                return {"status": "error", "message": "No path to reconnect to"}
+            self.close()
+            time.sleep(1)
+            return self.open(self.path, self.baudrate)
 
 
 def _resolve_rfcomm_path(mac: str) -> str:

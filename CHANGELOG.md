@@ -1,55 +1,44 @@
-# Changelog
+# CHANGELOG
 
-All notable changes to Arduino Vibe IDE will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [0.2] - 2026-06-04
+## v0.2.1 — Multi-Board Support & Serial Plotter (2026-06-04)
 
 ### Added
-- **IDE Plugin Integration** — MCP server now installable as IDE plugin via stdio transport
-- **37 MCP Tools** — Expanded from 15 to 37 tools including:
-  - AgentCore vibe coding (NL prompt → sketch → compile → flash)
-  - Template library (weather station, plant monitor, security system, smart home hub, LED controller, IoT gateway)
-  - Agent bridge for live hardware feedback loop
-  - Sensor reading, LED control, servo control via AgentCore
-  - Template search and retrieval
-- **Agent Sketch Builder** — Natural language to AgentCore-enabled Arduino sketches
-- **Hardware Database** — Keyword-based hardware inference (sensors, actuators, displays, communication)
-- **Pre-built Templates** — 6 AgentCore templates with wiring diagrams and library requirements
-- **IDE Configuration Files** — Ready-to-use MCP configs for Claude Code, Cursor, and Codex
-- **Example Prompts** — Comprehensive usage examples for vibe coding workflows
-- **Package Installation** — `pip install -e .` installs CLI + MCP server as global commands
-- **MCP Server Entry Point** — `arduino-vibe-mcp` command for IDE integration
+- **Multi-board support** — ESP32, ESP8266, RP2040 families added to `BOARD_CONFIGS`
+  - ESP32: `esp32`, `esp32dev`, `esp32s3`
+  - ESP8266: `esp8266`, `nodemcu`
+  - RP2040: `rp2040`, `rpipico`, `rpipicow`
+  - Dynamic board core installation via `arduino-cli core install` with additional URLs
+- **Serial Plotter** — New `src/serial_plotter.py` module
+  - Threaded, non-blocking serial reading with background worker
+  - Flexible numeric parsing (comma/tab/space delimiters, labeled values)
+  - Per-channel statistics (min, max, avg, latest)
+  - MCP tools: `serial_plotter_open`, `serial_plotter_read`, `serial_plotter_summary`, `serial_plotter_close`
+- **Configuration Profiles** — New `src/config_profiles.py` module
+  - YAML-based hardware profiles stored in `~/.arduino-vibe/profiles/`
+  - Full CRUD: create, update, delete, list, set active
+  - Stores FQBN, connection type, baudrate, LED pins, custom pin mappings
+  - 7 MCP tools: `profile_list`, `profile_get`, `profile_create`, `profile_update`, `profile_delete`, `profile_set_active`, `profile_get_active`
+- **Error Recovery** — Connection resilience for serial communication
+  - `check_connection()` — Verify serial link is alive
+  - `reconnect()` — Auto-reconnect to last known port
+  - `retry_write()` — Write with automatic retry and reconnect logic
+  - MCP tools: `serial_check_connection`, `serial_reconnect`
+- **SPIFFS/LittleFS Upload** — Filesystem upload for embedded web servers
+  - `upload_spiffs_tool()` — Upload SPIFFS to ESP32/ESP8266
+  - `upload_littlefs_tool()` — Upload LittleFS to ESP32
+- **Test Suite** — Comprehensive pytest coverage (35 tests, all passing)
+  - `test_compiler.py` — Board configurations, compilation, upload
+  - `test_serial_terminal.py` — Serial terminal open/read/write/close
+  - `test_config_profiles.py` — Profile CRUD and management
+  - `test_serial_plotter.py` — Data parsing and plotter operations
+- **Example Sketches** — 6 examples across supported platforms
+  - `blink.ino` — Classic blink (all boards)
+  - `sensor-read.ino` — Analog sensor with serial plotter output
+  - `esp32-wifi-webserver.ino` — WiFi web server with LED toggle
+  - `esp8266-iot-mqtt.ino` — MQTT client for IoT data
+  - `pico-led-fade.ino` — RP2040 PWM LED fade
 
 ### Changed
-- **MCP Server** — Expanded from 15 to 37 tools with full AgentCore support
-- **Project Structure** — Added `ide-integration/`, `templates/`, and agent modules
-- **Build System** — Updated to setuptools.build_meta with package discovery
-
-### Fixed
-- **Build Backend** — Fixed setuptools backend for modern pip compatibility
-- **Package Discovery** — Added setuptools.packages.find for src and templates modules
-
-### Documentation
-- **IDE Setup Guide** — Full installation and configuration instructions
-- **Example Prompts** — Ready-to-use prompts for Claude Code, Cursor, and Codex
-- **Skill Update** — Updated arduino-mcp-ide skill with IDE plugin integration
-- **README** — Updated with MCP tools table and hardware configuration
-
-## [0.1] - 2026-06-01
-
-### Added
-- MCP server with 15+ Arduino hardware control tools
-- CLI wizard with interactive setup (click + rich)
-- USB serial + Bluetooth HC-05 device discovery
-- Template-based Arduino C++ sketch generation
-- Project management (create, save, backup, load)
-- Interactive serial terminal
-- Runtime LED control via serial commands (FastLED/SK6812)
-- IR remote support (receive/send with code storage)
-- Sensor support (DHT, BMP, BME, I2C detection)
-- Library management (install, list, search)
-- Compilation and upload via arduino-cli
-- Board verification and module detection
+- `src/compiler.py` — Dynamic board detection and FQBN resolution for all families
+- `src/server.py` — Registered plotter, profile, and error recovery MCP tools
+- `src/serial_terminal.py` — Updated for compatibility with new features

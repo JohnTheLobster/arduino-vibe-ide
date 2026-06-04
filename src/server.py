@@ -21,9 +21,12 @@ from mcp.server.fastmcp import FastMCP
 
 from devices import discover_all_devices, discover_devices_json, check_modules
 from serial_terminal import SerialTerminal, open_terminal, send_serial, read_serial
+from serial_plotter import SerialPlotter
 from compiler import (
     compile_sketch, upload_sketch, install_library, list_libraries,
     search_library, verify_board, board_detect, board_manager_update,
+    upload_spiffs, upload_littlefs,
+    install_board_core,
 )
 from project import ArduinoProject
 from sketch_generator import (
@@ -37,6 +40,7 @@ from agent_sketch_builder import (
     infer_hardware, HardwareSpec,
 )
 import templates
+from config_profiles import register_profile_tools
 
 # Server instance
 mcp = FastMCP(
@@ -48,6 +52,7 @@ mcp = FastMCP(
 _serial_terminal = SerialTerminal()
 _project_manager = ArduinoProject()
 _agent_bridge = AgentBridge()
+_plotter = SerialPlotter()
 
 # Register sketch builder tools (agent_build_sketch, agent_compile_sketch, agent_flash_sketch, agent_build_and_flash)
 register_sketch_builder_tools(mcp)
@@ -162,6 +167,49 @@ def serial_send(path: str, data: str, baudrate: int = 115200) -> dict:
         Send status with bytes transmitted.
     """
     return send_serial(path, data, baudrate)
+
+
+@mcp.tool()
+def serial_check_connection() -> dict:
+    """Check if the serial connection is still alive."""
+    return _serial_terminal.check_connection()
+
+
+@mcp.tool()
+def serial_reconnect() -> dict:
+    """Attempt to reconnect to the last known serial port."""
+    return _serial_terminal.reconnect()
+
+
+# ─── Serial Plotter ───────────────────────────────────────────────
+
+@mcp.tool()
+def serial_plotter_open(path: str, baudrate: int = 115200) -> dict:
+    """Open a serial plotter. Reads numeric data from serial and parses it for plotting. Supports comma/tab/space separated values."""
+    global _plotter
+    _plotter = SerialPlotter()
+    return _plotter.open(path, baudrate)
+
+
+@mcp.tool()
+def serial_plotter_read(count: int = 50) -> dict:
+    """Read latest data from the serial plotter with timestamps, values, and statistics."""
+    return _plotter.read_latest(count)
+
+
+@mcp.tool()
+def serial_plotter_summary() -> dict:
+    """Get statistics summary from the serial plotter. Returns min/max/avg/latest for each channel."""
+    return _plotter.get_summary()
+
+
+@mcp.tool()
+def serial_plotter_close() -> dict:
+    """Close the serial plotter connection."""
+    global _plotter
+    result = _plotter.close()
+    _plotter = SerialPlotter()
+    return result
 
 
 # ─── LED Control ──────────────────────────────────────────────────
@@ -439,6 +487,25 @@ def upload_sketch_tool(
     return result.to_dict()
 
 
+@mcp.tool()
+def upload_spiffs_tool(port: str, fqbn: str, data_dir: str) -> dict:
+    """Upload SPIFFS filesystem to ESP32/ESP8266 board. Args: port, fqbn, data_dir."""
+    result = upload_spiffs(port, fqbn, data_dir)
+    return result.to_dict()
+
+
+@mcp.tool()
+def upload_littlefs_tool(port: str, fqbn: str, data_dir: str) -> dict:
+    """Upload LittleFS filesystem to ESP32 board. Args: port, fqbn, data_dir."""
+    return upload_littlefs(port, fqbn, data_dir)
+
+
+@mcp.tool()
+def install_board_core_tool(board_name: str) -> dict:
+    """Install board core for ESP32, ESP8266, RP2040, or AVR."""
+    return install_board_core(board_name)
+
+
 # ─── Library Management ───────────────────────────────────────────
 
 @mcp.tool()
@@ -584,6 +651,10 @@ def load_project(name: str) -> dict:
         Full project data including sketch code, metadata, and backups.
     """
     return _project_manager.load(name)
+
+
+# Register profile tools
+register_profile_tools(mcp)
 
 
 # ─── Main ─────────────────────────────────────────────────────────
