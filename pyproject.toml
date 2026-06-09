@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arduino-vibe-ide"
-version = "0.2"
+version = "0.2.2"
 description = "AI-powered Arduino IDE MCP server and CLI wizard for hardware vibe coding"
 readme = "README.md"
 requires-python = ">=3.11"

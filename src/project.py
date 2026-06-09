@@ -5,13 +5,11 @@ Create, save, load, backup, and list Arduino projects.
 
 import json
 import os
+import re
 import shutil
 import tarfile
-import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
 # Default project directory
 PROJECTS_DIR = os.environ.get(
@@ -48,7 +46,7 @@ class ProjectMetadata:
     device_path: str = ""
     bt_mac: str = ""
     bt_pin: str = ""
-    bt_rfcord_channel: int = 1
+    bt_rfcomm_channel: int = 1
     libraries: list = field(default_factory=list)
     pins: list = field(default_factory=list)
     notes: str = ""
@@ -66,7 +64,7 @@ class ProjectMetadata:
             "device_path": self.device_path,
             "bt_mac": self.bt_mac,
             "bt_pin": self.bt_pin,
-            "bt_rfcord_channel": self.bt_rfcord_channel,
+            "bt_rfcomm_channel": self.bt_rfcomm_channel,
             "libraries": self.libraries,
             "pins": [p.to_dict() if isinstance(p, PinConfig) else p for p in self.pins],
             "notes": self.notes,
@@ -77,6 +75,15 @@ class ProjectMetadata:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ProjectMetadata":
+        data = dict(data)
+        # Migrate legacy field name (v0.2.1 and earlier).
+        if "bt_rfcord_channel" in data and "bt_rfcomm_channel" not in data:
+            data["bt_rfcomm_channel"] = data.pop("bt_rfcord_channel")
+        else:
+            data.pop("bt_rfcord_channel", None)
+        # Drop unknown keys so old files don't crash loading.
+        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        data = {k: v for k, v in data.items() if k in valid_fields}
         pins = []
         for p in data.get("pins", []):
             if isinstance(p, dict):
@@ -87,12 +94,40 @@ class ProjectMetadata:
         return cls(**data)
 
 
+_SAFE_NAME_RE = re.compile(r"[^a-z0-9_]+")
+
+
+def _safe_project_name(name: str) -> str:
+    """Convert a project name into a filesystem-safe slug.
+
+    Strips path separators and any character outside [a-z0-9_]; raises
+    ValueError on names that resolve to nothing (preventing path traversal
+    and empty-directory creation).
+    """
+    if not name or not name.strip():
+        raise ValueError("Project name cannot be empty")
+    candidate = name.strip().lower().replace(" ", "_").replace("-", "_")
+    candidate = _SAFE_NAME_RE.sub("", candidate)
+    candidate = candidate.strip("._")
+    if not candidate:
+        raise ValueError(f"Project name '{name}' has no valid characters")
+    return candidate
+
+
 class ArduinoProject:
     """Manages an Arduino Vibe IDE project."""
 
     def __init__(self, project_dir: str = PROJECTS_DIR):
         self.project_dir = os.path.abspath(project_dir)
         os.makedirs(self.project_dir, exist_ok=True)
+
+    def _project_path(self, name: str) -> str:
+        """Resolve a project directory and ensure it stays under project_dir."""
+        safe_name = _safe_project_name(name)
+        path = os.path.abspath(os.path.join(self.project_dir, safe_name))
+        if os.path.commonpath([self.project_dir, path]) != self.project_dir:
+            raise ValueError(f"Resolved path escapes project_dir: {name}")
+        return path
 
     def create(self, name: str, **kwargs) -> dict:
         """
@@ -105,8 +140,11 @@ class ArduinoProject:
         Returns:
             Project metadata dict
         """
-        safe_name = name.lower().replace(" ", "_").replace("-", "_")
-        project_path = os.path.join(self.project_dir, safe_name)
+        try:
+            safe_name = _safe_project_name(name)
+            project_path = self._project_path(name)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
 
         # Create project structure
         sketch_dir = os.path.join(project_path, "sketch")
@@ -165,8 +203,10 @@ class ArduinoProject:
         Returns:
             Status dict
         """
-        safe_name = name.lower().replace(" ", "_").replace("-", "_")
-        project_path = os.path.join(self.project_dir, safe_name)
+        try:
+            project_path = self._project_path(name)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
         meta_path = os.path.join(project_path, "project.json")
 
         if not os.path.exists(meta_path):
@@ -211,8 +251,11 @@ class ArduinoProject:
         Returns:
             Backup info with tarball path
         """
-        safe_name = name.lower().replace(" ", "_").replace("-", "_")
-        project_path = os.path.join(self.project_dir, safe_name)
+        try:
+            safe_name = _safe_project_name(name)
+            project_path = self._project_path(name)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
 
         if not os.path.exists(project_path):
             return {
@@ -312,8 +355,10 @@ class ArduinoProject:
         Returns:
             Full project data
         """
-        safe_name = name.lower().replace(" ", "_").replace("-", "_")
-        project_path = os.path.join(self.project_dir, safe_name)
+        try:
+            project_path = self._project_path(name)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
         meta_path = os.path.join(project_path, "project.json")
 
         if not os.path.exists(meta_path):
@@ -363,8 +408,10 @@ class ArduinoProject:
 
     def delete(self, name: str) -> dict:
         """Delete a project."""
-        safe_name = name.lower().replace(" ", "_").replace("-", "_")
-        project_path = os.path.join(self.project_dir, safe_name)
+        try:
+            project_path = self._project_path(name)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
 
         if not os.path.exists(project_path):
             return {

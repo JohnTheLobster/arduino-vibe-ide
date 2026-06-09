@@ -5,11 +5,9 @@ MCP server exposing Arduino hardware control tools.
 Supports USB serial, Bluetooth, compilation, upload, and project management.
 """
 
-import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Add src to path
 _src_dir = Path(__file__).parent
@@ -19,14 +17,20 @@ sys.path.insert(0, str(_src_dir.parent))
 
 from mcp.server.fastmcp import FastMCP
 
-from devices import discover_all_devices, discover_devices_json, check_modules
-from serial_terminal import SerialTerminal, open_terminal, send_serial, read_serial
+from devices import discover_devices_json, check_modules as _check_modules
+from serial_terminal import SerialTerminal, send_serial
 from serial_plotter import SerialPlotter
 from compiler import (
     compile_sketch, upload_sketch, install_library, list_libraries,
-    search_library, verify_board, board_detect, board_manager_update,
+    search_library, verify_board as _verify_board, board_manager_update,
     upload_spiffs, upload_littlefs,
     install_board_core,
+)
+from bluetooth_upload import (
+    pair_bluetooth_device, setup_rfcomm, release_rfcomm,
+    connect_bluetooth_for_upload, disconnect_bluetooth,
+    trigger_bootloader_reset, list_rfcomm_connections,
+    BluetoothUploadConfig,
 )
 from project import ArduinoProject
 from sketch_generator import (
@@ -73,8 +77,8 @@ def list_devices() -> dict:
     return result
 
 
-@mcp.tool()
-def verify_board(port: str = "", fqbn: str = "") -> dict:
+@mcp.tool(name="verify_board")
+def verify_board_tool(port: str = "", fqbn: str = "") -> dict:
     """
     Verify a connected Arduino board.
     Detects board type, firmware, and connection status.
@@ -86,12 +90,11 @@ def verify_board(port: str = "", fqbn: str = "") -> dict:
     Returns:
         Board verification status with details.
     """
-    result = verify_board(port=port, fqbn=fqbn)
-    return result
+    return _verify_board(port=port, fqbn=fqbn)
 
 
-@mcp.tool()
-def check_modules(device_path: str) -> dict:
+@mcp.tool(name="check_modules")
+def check_modules_tool(device_path: str) -> dict:
     """
     Detect connected modules (HC-05, sensors, etc.) via serial probing.
     Sends AT commands and scans for I2C devices.
@@ -102,8 +105,7 @@ def check_modules(device_path: str) -> dict:
     Returns:
         Dict with detected modules and their details.
     """
-    result = check_modules(device_path)
-    return result
+    return _check_modules(device_path)
 
 
 # ─── Serial Communication ─────────────────────────────────────────
@@ -273,10 +275,7 @@ def set_leds(
     if path:
         result = send_serial(path, cmd_string, baudrate)
     else:
-        # Use persistent terminal
         result = _serial_terminal.write(cmd_string)
-        # Read response
-        resp = _serial_terminal.read(128)
 
     return {
         "status": "sent",
@@ -651,6 +650,161 @@ def load_project(name: str) -> dict:
         Full project data including sketch code, metadata, and backups.
     """
     return _project_manager.load(name)
+
+
+# ─── Bluetooth Tools ──────────────────────────────────────────────
+
+@mcp.tool()
+def bt_pair_device(mac: str, pin: str = "1234") -> dict:
+    """
+    Pair with a Bluetooth device (HC-05/HC-06).
+
+    Args:
+        mac: MAC address (e.g., "AA:BB:CC:DD:EE:FF")
+        pin: PIN code (default "1234")
+
+    Returns:
+        Pairing status with success, message, and paired flag.
+    """
+    return pair_bluetooth_device(mac, pin)
+
+
+@mcp.tool()
+def bt_connect(mac: str, pin: str = "1234", channel: int = 1, device: str = "/dev/rfcomm0") -> dict:
+    """
+    Connect to Bluetooth device and create RFCOMM serial port.
+
+    Creates /dev/rfcomm0 as a serial port usable with arduino-cli upload.
+    The HC-05 must be wired to Arduino pins 0 (TX) and 1 (RX) for bootloader access.
+
+    Args:
+        mac: MAC address of Bluetooth device
+        pin: PIN code
+        channel: RFCOMM channel (default 1)
+        device: RFCOMM device path (default /dev/rfcomm0)
+
+    Returns:
+        Connection status with device path and instructions.
+    """
+    config = BluetoothUploadConfig(
+        mac_address=mac,
+        pin=pin,
+        rfcomm_channel=channel,
+        rfcomm_device=device,
+    )
+    return connect_bluetooth_for_upload(config)
+
+
+@mcp.tool()
+def bt_disconnect(device: str = "/dev/rfcomm0") -> dict:
+    """
+    Disconnect Bluetooth RFCOMM connection.
+
+    Args:
+        device: RFCOMM device path
+
+    Returns:
+        Disconnection status.
+    """
+    return disconnect_bluetooth(device)
+
+
+@mcp.tool()
+def bt_status() -> dict:
+    """
+    Show Bluetooth and RFCOMM status.
+
+    Returns active RFCOMM connections and paired Bluetooth devices.
+
+    Returns:
+        Status dict with RFCOMM connections and paired devices.
+    """
+    result = {
+        "rfcomm": list_rfcomm_connections(),
+        "paired_devices": [],
+    }
+    # Scan for paired devices
+    from devices import scan_bluetooth_devices
+    bt_devices = scan_bluetooth_devices()
+    if bt_devices:
+        for dev in bt_devices:
+            result["paired_devices"].append({
+                "name": dev.name,
+                "mac": dev.mac_address,
+                "path": dev.path,
+            })
+    return result
+
+
+@mcp.tool()
+def bt_upload(
+    sketch_path: str,
+    mac: str = "",
+    device: str = "/dev/rfcomm0",
+    fqbn: str = "arduino:avr:nano",
+    pin: str = "1234",
+) -> dict:
+    """
+    Upload sketch via Bluetooth (HC-05/HC-06).
+
+    The HC-05 must be wired to Arduino pins 0 (TX) and 1 (RX)
+    for bootloader access (hardware UART only).
+
+    Args:
+        sketch_path: Path to .ino file or sketch directory
+        mac: Bluetooth MAC address (optional, connects if provided)
+        device: RFCOMM device path
+        fqbn: Board FQBN (default arduino:avr:nano)
+        pin: Bluetooth PIN
+
+    Returns:
+        Upload result with success, message, and error details.
+    """
+    result = {
+        "success": False,
+        "message": "",
+        "sketch": sketch_path,
+        "device": device,
+        "fqbn": fqbn,
+        "steps": {},
+    }
+
+    # Step 1: Connect if MAC provided
+    if mac:
+        config = BluetoothUploadConfig(
+            mac_address=mac, pin=pin, rfcomm_device=device,
+        )
+        conn = connect_bluetooth_for_upload(config)
+        result["steps"]["connect"] = conn
+        if not conn["success"]:
+            result["message"] = f"Connect warning: {conn['message']}"
+            # Continue anyway — device may already be connected
+
+    # Step 2: Compile
+    compile_result = compile_sketch(sketch_path, fqbn, device)
+    result["steps"]["compile"] = compile_result.to_dict()
+    if not compile_result.success:
+        result["message"] = "Compilation failed"
+        result["error"] = "; ".join(compile_result.errors)
+        return result
+
+    # Step 3: Reset bootloader
+    reset_result = trigger_bootloader_reset(device)
+    result["steps"]["reset"] = reset_result
+
+    # Step 4: Upload
+    result["steps"]["uploading"] = True
+    upload_result = upload_sketch(sketch_path, fqbn, device)
+    result["steps"]["upload_result"] = upload_result.to_dict()
+
+    # Cleanup
+    disconnect_bluetooth(device)
+    result["steps"]["disconnected"] = True
+
+    result["success"] = upload_result.success
+    result["message"] = upload_result.message
+    result["error"] = upload_result.error
+    return result
 
 
 # Register profile tools

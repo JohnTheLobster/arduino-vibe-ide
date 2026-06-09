@@ -2,7 +2,7 @@
 
 AI-powered Arduino IDE MCP server and CLI wizard for hardware vibe coding.
 
-**Version 0.2.1** — Multi-Board Support & Serial Plotter
+**Version 0.2.2** — Quality & Hardening (path-traversal protection, MCP recursion fix, test suite expansion)
 
 [📖 Step-by-Step Setup Guide](SETUP.md) — *For beginners, no MCP knowledge needed*
 
@@ -44,6 +44,11 @@ arduino-vibe upload sketch.ino
 
 # Open serial terminal
 arduino-vibe terminal --device /dev/ttyACM0
+
+# Bluetooth upload (HC-05 wired to pins 0/1)
+arduino-vibe bt pair AA:BB:CC:DD:EE:FF --pin 1234
+arduino-vibe bt connect AA:BB:CC:DD:EE:FF
+arduino-vibe bt upload sketch.ino --device /dev/rfcomm0
 ```
 
 ### IDE Plugin Mode
@@ -66,7 +71,7 @@ Use AgentCore architecture with sensor reading every 5 minutes.
 Compile and flash to Arduino Nano.
 ```
 
-## MCP Tools (53 Total)
+## MCP Tools (58 Total)
 
 ### Hardware
 - `list_devices` — Discover USB serial + Bluetooth devices
@@ -112,6 +117,13 @@ Compile and flash to Arduino Nano.
 - `list_templates` — Browse 6 pre-built templates
 - `search_templates` — Find templates by keyword
 - `create_template_project` — Generate project from template
+
+### Bluetooth Upload
+- `bt_pair_device` — Pair with HC-05/HC-06
+- `bt_connect` — Connect and create RFCOMM serial port
+- `bt_disconnect` — Release RFCOMM connection
+- `bt_status` — Show RFCOMM connections and paired devices
+- `bt_upload` — Full upload via Bluetooth (compile + flash)
 
 ### Board Management
 - `install_board_core` — Install board support (ESP32, ESP8266, RP2040)
@@ -171,7 +183,7 @@ arduino-vibe-ide/
 ├── templates/         # Pre-built AgentCore templates
 ├── src/
 │   ├── __init__.py    # Package init
-│   ├── server.py      # MCP server (53 tools)
+│   ├── server.py      # MCP server (58 tools)
 │   ├── cli.py         # CLI wizard (click + rich)
 │   ├── agent_bridge.py             # AgentCore hardware bridge
 │   ├── agent_sketch_builder.py     # NL → sketch generation
@@ -179,10 +191,11 @@ arduino-vibe-ide/
 │   ├── devices.py                  # Device discovery
 │   ├── serial_plotter.py           # Serial plotter with stats
 │   ├── serial_terminal.py          # Serial communication
+│   ├── bluetooth_upload.py         # Bluetooth upload (HC-05/HC-06)
 │   ├── compiler.py                 # arduino-cli wrapper (multi-board)
 │   ├── project.py                  # Project management
 │   └── sketch_generator.py         # AI sketch templates
-├── tests/             # Test suite (35 tests)
+├── tests/             # Test suite (51 tests)
 └── projects/          # User projects (auto-created)
 ```
 

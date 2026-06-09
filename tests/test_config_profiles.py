@@ -35,3 +35,18 @@ class TestConfigProfiles:
         temp_profiles.create_profile("active", "esp32:esp32:esp32dev")
         assert temp_profiles.set_active("active")["status"] == "active"
         assert temp_profiles.get_active() == "active"
+    def test_update_ignores_unknown_fields(self, temp_profiles):
+        temp_profiles.create_profile("t3", "arduino:avr:nano")
+        result = temp_profiles.update_profile("t3", baudrate=9600, totally_fake=True)
+        assert result["status"] == "updated"
+        assert "baudrate" in result["applied"]
+        assert "totally_fake" not in result["applied"]
+        data = temp_profiles.get_profile("t3")
+        assert data["baudrate"] == 9600
+        assert "totally_fake" not in data
+    def test_traversal_name_rejected(self, temp_profiles):
+        # Path-traversal characters should not escape the profiles dir.
+        result = temp_profiles.create_profile("../escape", "arduino:avr:nano")
+        # Either rejected outright or sanitized to a safe slug under profiles_dir.
+        if result["status"] == "created":
+            assert (temp_profiles.profiles_dir / "escape.yaml").exists()

@@ -5,10 +5,10 @@ Supports USB serial (/dev/ttyACM*) and Bluetooth RFCOMM.
 
 import json
 import os
-import re
+import sys
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import serial
@@ -314,14 +314,13 @@ def _resolve_rfcomm_path(mac: str) -> str:
     Checks /dev/rfcomm* for the MAC address.
     """
     # Check existing rfcomm devices
-    for rfcomm_path in sorted(
-        [f"/dev/rfcomm{i}" for i in range(0, 20)]
-    ):
+    mac_upper = mac.upper()
+    for rfcomm_path in [f"/dev/rfcomm{i}" for i in range(0, 20)]:
         if os.path.exists(rfcomm_path):
             try:
                 with open(os.path.join("/sys", os.path.relpath(rfcomm_path, "/dev"), "uevent")) as f:
                     content = f.read()
-                    if mac.upper().replace(":", ":") in content.upper() or mac.upper() in content.upper():
+                    if mac_upper in content.upper():
                         return rfcomm_path
             except (FileNotFoundError, PermissionError):
                 pass
@@ -338,7 +337,7 @@ def _resolve_rfcomm_path(mac: str) -> str:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
-    return f"/dev/rfcomm0"
+    return "/dev/rfcomm0"
 
 
 def open_terminal(path: str, baudrate: int = 115200) -> dict:
@@ -386,6 +385,5 @@ if __name__ == "__main__":
         terminal = SerialTerminal()
         print(json.dumps(terminal.open(path, baud), indent=2))
     else:
-        import sys
         print("Usage: python serial_terminal.py <device_path> [baudrate]")
         print("  e.g., python serial_terminal.py /dev/ttyACM0 115200")

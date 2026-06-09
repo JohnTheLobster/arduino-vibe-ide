@@ -38,10 +38,16 @@ from devices import (
     discover_all_devices, scan_usb_serial_ports, scan_bluetooth_devices,
     DeviceInfo, check_modules,
 )
-from serial_terminal import SerialTerminal
+from serial_terminal import SerialTerminal, send_serial
 from compiler import (
     compile_sketch, upload_sketch, install_library, list_libraries,
     verify_board, board_detect, board_list,
+)
+from bluetooth_upload import (
+    pair_bluetooth_device, setup_rfcomm, release_rfcomm,
+    connect_bluetooth_for_upload, disconnect_bluetooth,
+    setup_hc05_for_upload, trigger_bootloader_reset, list_rfcomm_connections,
+    BluetoothUploadConfig,
 )
 from project import ArduinoProject, PinConfig
 from sketch_generator import (
@@ -59,7 +65,7 @@ def show_banner():
     """Display the Arduino Vibe IDE banner."""
     banner = """
     ╔══════════════════════════════════════════╗
-    ║   ⚡  Arduino Vibe IDE  v1.0.0  ⚡       ║
+    ║   ⚡  Arduino Vibe IDE  v0.2.2  ⚡       ║
     ║   AI-Powered Hardware Vibe Coding        ║
     ╚══════════════════════════════════════════╝
     """
@@ -910,10 +916,252 @@ def led_control(
         console.print("  [yellow]⚠ Check parameters[/yellow]")
 
 
+# ─── Bluetooth Commands ───────────────────────────────────────────
+
+@click.group(name="bt")
+def bt_cli():
+    """Bluetooth upload and device management."""
+    pass
+
+
+@bt_cli.command(name="pair")
+@click.argument("mac")
+@click.option("--pin", default="1234", help="Bluetooth PIN")
+def bt_pair(mac: str, pin: str):
+    """Pair with a Bluetooth device (HC-05/HC-06)."""
+    console.print()
+    console.print(Panel(
+        f"[bold cyan]📡 Bluetooth Pair[/bold cyan]\\n\\n"
+        f"[dim]Device:[/dim] [cyan]{mac}[/cyan]  [dim]PIN:[/dim] [yellow]{pin}[/yellow]",
+        border_style="cyan",
+        box=box.ROUNDED,
+    ))
+
+    result = pair_bluetooth_device(mac, pin)
+
+    if result["success"]:
+        console.print(f"\\n  [green]✓ Paired with {mac}[/green]")
+        if result.get("message"):
+            console.print(f"  [dim]{result['message']}[/dim]")
+    else:
+        console.print(f"\\n  [red]✗ Pair failed:[/red] {result['message']}")
+
+
+@bt_cli.command(name="connect")
+@click.argument("mac")
+@click.option("--pin", default="1234", help="Bluetooth PIN")
+@click.option("--channel", default=1, help="RFCOMM channel")
+@click.option("--device", "-d", default="/dev/rfcomm0", help="RFCOMM device path")
+def bt_connect(mac: str, pin: str, channel: int, device: str):
+    """Connect to Bluetooth device and create RFCOMM serial port."""
+    console.print()
+    console.print(Panel(
+        f"[bold cyan]📡 Bluetooth Connect[/bold cyan]\\n\\n"
+        f"[dim]Device:[/dim] [cyan]{mac}[/cyan]  [dim]Channel:[/dim] [yellow]{channel}[/yellow]",
+        border_style="cyan",
+        box=box.ROUNDED,
+    ))
+
+    config = BluetoothUploadConfig(
+        mac_address=mac,
+        pin=pin,
+        rfcomm_channel=channel,
+        rfcomm_device=device,
+    )
+
+    result = connect_bluetooth_for_upload(config)
+
+    if result["success"]:
+        console.print(f"\\n  [green]✓ Connected![/green]")
+        console.print(f"  [dim]RFCOMM device:[/dim] [cyan]{result['device']}[/cyan]")
+        console.print(f"\\n[dim]Now you can:[/dim]")
+        console.print(f"  [cyan]arduino-vibe bt upload --device {result['device']}[/cyan]")
+        console.print(f"  [cyan]arduino-vibe upload --port {result['device']}[/cyan]")
+    else:
+        console.print(f"\\n  [red]✗ Connect failed:[/red] {result['message']}")
+
+
+@bt_cli.command(name="disconnect")
+@click.option("--device", "-d", default="/dev/rfcomm0", help="RFCOMM device path")
+def bt_disconnect(device: str):
+    """Disconnect Bluetooth RFCOMM connection."""
+    console.print(f"  [dim]Disconnecting {device}...[/dim]")
+    result = disconnect_bluetooth(device)
+    console.print(f"  [green]✓ Disconnected[/green]")
+
+
+@bt_cli.command(name="status")
+def bt_status():
+    """Show Bluetooth and RFCOMM status."""
+    console.print()
+    console.print(Panel(
+        "[bold cyan]📡 Bluetooth Status[/bold cyan]",
+        border_style="cyan",
+        box=box.ROUNDED,
+    ))
+
+    # RFCOMM connections
+    rfcomm = list_rfcomm_connections()
+    console.print("\\n[dim]RFCOMM Connections:[/dim]")
+    if rfcomm["active"]:
+        for conn in rfcomm["active"]:
+            console.print(f"  [green]• {conn['device']}[/green] -> {conn['mac']} (ch {conn['channel']})")
+    else:
+        console.print("  [dim]No active RFCOMM connections[/dim]")
+
+    # Paired devices
+    console.print("\\n[dim]Paired Devices:[/dim]")
+    bt_devices = scan_bluetooth_devices()
+    if bt_devices:
+        for dev in bt_devices:
+            console.print(f"  [cyan]• {dev.name}[/cyan] ({dev.mac_address})")
+    else:
+        console.print("  [dim]No paired devices[/dim]")
+
+
+@bt_cli.command(name="upload")
+@click.argument("sketch_path", required=False)
+@click.option("--mac", "-m", default="", help="Bluetooth MAC address")
+@click.option("--device", "-d", default="/dev/rfcomm0", help="RFCOMM device path")
+@click.option("--fqbn", "-f", default="arduino:avr:nano", help="Board FQBN")
+@click.option("--pin", default="1234", help="Bluetooth PIN")
+@click.option("--reset/--no-reset", default=True, help="Auto-reset bootloader")
+def bt_upload(sketch_path: str, mac: str, device: str, fqbn: str, pin: str, reset: bool):
+    """Upload sketch via Bluetooth (HC-05/HC-06).
+
+    The HC-05 must be wired to Arduino pins 0 (TX) and 1 (RX)
+    for bootloader access.
+    """
+    if not sketch_path:
+        sketch_path = Prompt.ask("Sketch path (.ino file or directory)")
+
+    console.print()
+    console.print(Panel(
+        f"[bold cyan]📡 Bluetooth Upload[/bold cyan]\\n\\n"
+        f"[dim]Sketch:[/dim] [cyan]{sketch_path}[/cyan]\\n"
+        f"[dim]Device:[/dim] [cyan]{device}[/cyan]\\n"
+        f"[dim]Board:[/dim] [yellow]{fqbn}[/yellow]",
+        border_style="cyan",
+        box=box.ROUNDED,
+    ))
+
+    # Step 1: Connect if MAC provided
+    if mac:
+        console.print("\\n[dim]Step 1: Connecting to Bluetooth device...[/dim]")
+        config = BluetoothUploadConfig(
+            mac_address=mac, pin=pin, rfcomm_device=device,
+        )
+        conn_result = connect_bluetooth_for_upload(config)
+        if not conn_result["success"]:
+            console.print(f"  [yellow]⚠ Connect:[/yellow] {conn_result['message']}")
+            console.print(f"  [dim](Continuing anyway — device may already be connected)[/dim]")
+    else:
+        console.print(f"\\n[dim]Using RFCOMM device:[/dim] [cyan]{device}[/cyan]")
+
+    # Step 2: Compile
+    console.print("\\n[dim]Step 2: Compiling sketch...[/dim]")
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]Compiling...", total=None)
+        compile_result = compile_sketch(sketch_path, fqbn, device)
+        if compile_result.success:
+            progress.update(task, description="[green]Compilation complete")
+        else:
+            progress.update(task, description="[red]Compilation failed")
+        time.sleep(0.3)
+
+    if not compile_result.success:
+        console.print(f"  [red]✗ Compile failed:[/red]")
+        for err in compile_result.errors:
+            console.print(f"    [red]{err}[/red]")
+        if compile_result.output:
+            console.print(f"\\n  [dim]Output:[/dim]")
+            console.print(compile_result.output[:500])
+        return
+
+    if compile_result.size_bytes:
+        console.print(f"  [green]✓ Compiled[/green] [dim]({compile_result.size_bytes} bytes)[/dim]")
+
+    # Step 3: Reset bootloader
+    if reset:
+        console.print("\\n[dim]Step 3: Resetting board into bootloader...[/dim]")
+        console.print("  [dim]Press the Arduino RESET button now, or wait 2 seconds...[/dim]")
+        time.sleep(0.5)
+        reset_result = trigger_bootloader_reset(device)
+        if reset_result["success"]:
+            console.print(f"  [dim]{reset_result['message']}[/dim]")
+        else:
+            console.print(f"  [yellow]⚠ Reset:[/yellow] {reset_result['message']}")
+            console.print(f"  [dim](Arduino may need manual reset button press)[/dim]")
+
+    # Step 4: Upload
+    console.print("\\n[dim]Step 4: Uploading via Bluetooth...[/dim]")
+    console.print("  [dim]If upload hangs, press the Arduino RESET button now[/dim]")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]Uploading...", total=None)
+        result = upload_sketch(sketch_path, fqbn, device)
+        if result.success:
+            progress.update(task, description="[green]Upload complete")
+        else:
+            progress.update(task, description="[red]Upload failed")
+        time.sleep(0.3)
+
+    if result.success:
+        console.print(f"\\n  [green]✓ Upload successful via Bluetooth![/green]")
+        if result.message:
+            console.print(f"  [dim]{result.message}[/dim]")
+    else:
+        console.print(f"\\n  [red]✗ Upload failed:[/red] {result.error}")
+        if result.output:
+            console.print(f"\\n  [dim]Output:[/dim]")
+            console.print(result.output[:500])
+
+    # Cleanup
+    console.print("\\n[dim]Cleaning up...[/dim]")
+    disconnect_bluetooth(device)
+
+
+@bt_cli.command(name="hc05-setup")
+@click.argument("mac")
+@click.option("--pin", default="1234", help="Bluetooth PIN")
+def bt_hc05_setup(mac: str, pin: str):
+    """Set up HC-05 for upload mode with full instructions."""
+    console.print()
+    console.print(Panel(
+        f"[bold cyan]📡 HC-05 Upload Setup[/bold cyan]\\n\\n"
+        f"[dim]Device:[/dim] [cyan]{mac}[/cyan]",
+        border_style="cyan",
+        box=box.ROUNDED,
+    ))
+
+    result = setup_hc05_for_upload(mac)
+
+    if result["success"]:
+        console.print(f"\\n  [green]✓ HC-05 ready![/green]")
+        console.print(f"  [dim]Device:[/dim] [cyan]{result['device']}[/cyan]")
+        console.print(f"  [dim]Upload baudrate:[/dim] [yellow]{result['upload_baudrate']}[/yellow]")
+    else:
+        console.print(f"\\n  [red]✗ Setup failed:[/red] {result['message']}")
+
+    if result.get("instructions"):
+        console.print("\\n[dim]Instructions:[/dim]")
+        for i, instr in enumerate(result["instructions"], 1):
+            console.print(f"  {i}. [cyan]{instr}[/cyan]")
+
+
 # ─── Main ─────────────────────────────────────────────────────────
 
 # Register subcommands
 cli.add_command(project_cli)
+cli.add_command(bt_cli)
 
 
 if __name__ == "__main__":

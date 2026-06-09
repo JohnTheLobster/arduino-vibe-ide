@@ -26,7 +26,7 @@ class DeviceInfo:
     board_hint: str = ""
     mac_address: str = ""
     bt_pin: str = ""
-    rfcord_channel: int = 1
+    rfcomm_channel: int = 1
     metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -259,14 +259,14 @@ def _infer_bt_board(mac: str, name: str) -> str:
 
 
 def _run_command(cmd: list[str], timeout: int = 10) -> Optional[str]:
-    """Run a shell command and return stdout."""
+    """Run a shell command and return stdout, or None on failure."""
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=timeout
         )
         return result.stdout
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        return f"Error: {e}"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
 
 
 def discover_all_devices() -> list[DeviceInfo]:
@@ -408,7 +408,7 @@ def _detect_i2c_modules(device_path: str) -> list:
                 "name": name,
             })
 
-    except (ImportError, serial.SerialException, Exception):
+    except Exception:
         pass
 
     return modules

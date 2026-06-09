@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## v0.2.2 — Quality & Hardening (2026-06-09)
+
+### Fixed
+- **Critical: `verify_board` / `check_modules` infinite recursion** — MCP tool wrappers in `src/server.py` shadowed their own imported implementations, calling themselves until the stack overflowed. Renamed wrappers to `*_tool` and preserved the public MCP tool names via `@mcp.tool(name=...)`.
+- **Typo: `rfcord_channel` → `rfcomm_channel`** — corrected the misspelled field on `DeviceInfo` (`src/devices.py`) and `ProjectMetadata.bt_rfcord_channel` (`src/project.py`). Legacy `project.json` files are auto-migrated on load.
+- **Missing `send_serial` import in `src/cli.py`** — `arduino-vibe led` would crash with `NameError`. Added the import.
+- **Broken `__main__` block in `src/serial_terminal.py`** — `sys.argv` was used before `import sys`; lifted the import to module scope.
+- **`devices._run_command` swallowed failures as text** — returning `"Error: ..."` strings was mis-parsed by callers as bluetoothctl output. Now returns `None` on failure.
+- **No-op MAC comparison** in `_resolve_rfcomm_path` — `mac.upper().replace(":", ":")` collapsed to a redundant compare; simplified.
+- **Dead variable** in `set_leds` (`src/server.py`) — removed.
+
+### Security
+- **Path-traversal protection for projects** — `ArduinoProject.create/save/backup/load/delete` now sanitize names through a strict `[a-z0-9_]` allowlist and verify the resolved path stays under `project_dir`. Empty/whitespace/punctuation-only names are rejected with a structured error instead of creating stray directories.
+- **Path-traversal protection for profiles** — same allowlist + resolve-and-check applied to `ConfigProfiles` (`src/config_profiles.py`).
+
+### Changed
+- **`profile_update` MCP tool signature** — FastMCP cannot expose `**kwargs` to clients. Replaced with explicit optional parameters (`board_fqbn`, `board_name`, `connection_type`, `usb_port`, `bluetooth_mac`, `bluetooth_pin`, `baudrate`, `led_pin`, `num_leds`, `led_type`, `notes`). The underlying `ConfigProfiles.update_profile()` still accepts `**kwargs` for backwards compat.
+- **`ConfigProfiles.update_profile` now ignores unknown fields** rather than silently writing them to disk.
+- **Version bumped to 0.2.2** in `pyproject.toml`, `src/__init__.py`, and the CLI banner (was a stale `v1.0.0`).
+- **`src/config_profiles.py`** — reformatted from single-line dataclass methods to readable multi-line bodies; added module/class docstrings.
+
+### Added
+- **`tests/test_project.py`** — 10 tests covering `_safe_project_name`, traversal guard, empty-name rejection, and the legacy `bt_rfcord_channel` migration.
+- **`tests/test_devices.py`** — 3 tests covering the renamed `rfcomm_channel` field and `discover_devices_json` shape.
+- **2 new `test_config_profiles.py` cases** — unknown-field filtering on `update_profile`, traversal-safe `create_profile`.
+- Total test suite: **51 tests passing** (up from 35).
+
+---
+
 ## v0.2.1 — Multi-Board Support & Serial Plotter (2026-06-04)
 
 ### Added
